@@ -40,7 +40,7 @@ import okhttp3.Response;
 public class ChooseAreaFragment extends Fragment {
 
     private static final String tag = "chooseAreaFragment";
-    private static final String commonUrl = "http://guolin.tech/api";
+    private static final String commonUrl = "http://guolin.tech/api/china/";
     private TextView textView;
     private Button backButton;
     private Button deleteButton;
@@ -77,7 +77,7 @@ public class ChooseAreaFragment extends Fragment {
         queryButton = view.findViewById(R.id.query_button);
         listView = view.findViewById(R.id.list_view);
 
-        adapter = new ArrayAdapter<String>(getContext(), android.R.layout
+        adapter = new ArrayAdapter<>(getContext(), android.R.layout
                 .simple_expandable_list_item_1, dataList);
         listView.setAdapter(adapter);
 
@@ -85,22 +85,17 @@ public class ChooseAreaFragment extends Fragment {
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
-
-                selectedProvince = provinceList.get(position);
-                Log.d(tag, selectedProvince.getProvinceName());
-                Log.d(tag, String.valueOf(selectedProvince.getId()));
-                //queryCity();
-
-                /*
                 if (current_level == PROVINCE_LEVEL){
                     selectedProvince = provinceList.get(position);
-                    Log.d(tag, selectedProvince.getProvinceName());
-                    Log.d(tag, String.valueOf(selectedProvince.getId()));
-                    //queryCity();
+                    queryCity();
                 }
-                /*else if (current_level == CITY_LEVEL){
+                else if (current_level == CITY_LEVEL){
                     selectedCity = cityList.get(position);
-                }*/
+                    queryCountry();
+                }
+                else if (current_level == COUNTRY_LEVLE){
+                    selectedCountry = countryList.get(position);
+                }
             }
         });
 
@@ -109,6 +104,7 @@ public class ChooseAreaFragment extends Fragment {
             public void onClick(View view) {
                 DataSupport.deleteAll(Province.class);
                 DataSupport.deleteAll(City.class);
+                DataSupport.deleteAll(Country.class);
                 dataList.clear();
                 adapter.notifyDataSetChanged();
             }
@@ -121,12 +117,33 @@ public class ChooseAreaFragment extends Fragment {
             }
         });
 
+        backButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (current_level == CITY_LEVEL){
+                    dataList.clear();
+                    queryProvince();
+                }
+                else if (current_level == COUNTRY_LEVLE){
+                    dataList.clear();
+                    queryCity();
+                }
+            }
+        });
+
         //初始化
         queryProvince();
         return view;
     }
 
+    /**
+     * 查询选中省内所有的市，优先从数据库查询，如果没有查询到再去服务器上查询，服务器上download下后，再次调用 queryProvince(),从书架库中提数据
+     */
     private void queryProvince(){
+
+        //UI
+        backButton.setVisibility(View.INVISIBLE);
+        textView.setText(null);
 
         provinceList = DataSupport.findAll(Province.class);
         if (provinceList.size() > 0){
@@ -134,7 +151,7 @@ public class ChooseAreaFragment extends Fragment {
         }
         else {
             showProgressDialog();
-            queryProvinceFromServer(commonUrl + "/china");
+            queryProvinceFromServer(commonUrl);
         }
         current_level = PROVINCE_LEVEL;
     }
@@ -151,11 +168,11 @@ public class ChooseAreaFragment extends Fragment {
     private void queryProvinceFromServer(String address){
 
         HttpUtil.sendOkHttpRequest(address, new Callback() {
-
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 //could only use .string() once
                 String responseString = response.body().string();
+                Log.d(tag, "onResponse: "+ responseString);
                 boolean result = false;
                 result = Utility.handleProvinceResponse(responseString);
 
@@ -186,18 +203,19 @@ public class ChooseAreaFragment extends Fragment {
     }
 
     private void queryCity(){
-        //cityList = DataSupport.where("cityId = ?", selectedCity.getId()).find(City.class);
-        //List<Song> songs = DataSupport.where("name like ?", "song%").order("duration").find(Song.class)
-
-        cityList = DataSupport.findAll(City.class);
+        backButton.setVisibility(View.VISIBLE);
+        textView.setText(selectedProvince.getProvinceName());
+        cityList = DataSupport.where("provinceId = ?", String.valueOf(selectedProvince
+                .getProvinceId())).find(City.class);
         if (cityList.size() > 0){
             queryCityFromDB();
         }
         else {
-            //showProgressDialog();
-            Log.d(tag,"selectedProvinceId: " + selectedProvince.getId());
-            //queryCityFromServer(commonUrl + "/china/" + selectedProvince.getId(),
-                    //selectedProvince.getId());
+            showProgressDialog();
+            Log.d(tag,"selectedProvinceId: " + selectedProvince.getProvinceId());
+            //queryCityFromServer(String address, final int provinceId) 将所有City设置ProvinceId，供返回
+            queryCityFromServer(commonUrl + selectedProvince.getProvinceId(),
+                    selectedProvince.getProvinceId());
         }
         current_level = CITY_LEVEL;
     }
@@ -214,7 +232,6 @@ public class ChooseAreaFragment extends Fragment {
     private void queryCityFromServer(String address, final int provinceId){
 
         HttpUtil.sendOkHttpRequest(address, new Callback() {
-
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 //could only use .string() once
@@ -236,7 +253,7 @@ public class ChooseAreaFragment extends Fragment {
             @Override
             public void onFailure(Call call, IOException e) {
 
-                Log.d(tag,"queryProvinceFromServer Failure");
+                Log.d(tag,"queryCityFromServer Failure");
                 e.printStackTrace();
                 getActivity().runOnUiThread(new Runnable() {
                     @Override
@@ -248,9 +265,65 @@ public class ChooseAreaFragment extends Fragment {
         });
     }
 
+    private void queryCountry(){
+        backButton.setVisibility(View.VISIBLE);
+        textView.setText(selectedCity.getCityName());
+        countryList = DataSupport.where("cityId = ?", String.valueOf(selectedCity
+                .getCityId())).find(Country.class);
+        if (countryList.size() > 0){
+            queryCountryFromDB();
+        }
+        else {
+            showProgressDialog();
+            Log.d(tag,"selectedCityId: " + selectedCity.getCityId());
+            queryCountryServer(commonUrl + selectedProvince.getProvinceId() + "/"
+                    + selectedCity.getCityId(),
+                    selectedCity.getCityId());
+        }
+        current_level = COUNTRY_LEVLE;
+    }
 
+    private void queryCountryFromDB(){
+        Log.d(tag, "queryCountryFromDB Start");
+        dataList.clear();
+        for (Country country: countryList){
+            dataList.add(country.getCountryName());
+        }
+        adapter.notifyDataSetChanged();
+    }
 
+    private void queryCountryServer(String address, final int cityId){
+        HttpUtil.sendOkHttpRequest(address, new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                String responseString = response.body().string();
+                boolean result = false;
+                result = Utility.handleCountryResponse(responseString, cityId);
 
+                if (result){
+                    closeProgressDialog();
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            queryCountry();
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.d(tag,"queryCountryFromServer Failure");
+                e.printStackTrace();
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(getContext(), "Loaded Failure", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        });
+    }
 
     private void showProgressDialog(){
         if (progressDialog == null){
@@ -267,22 +340,3 @@ public class ChooseAreaFragment extends Fragment {
         }
     }
 }
-
-/*
- */
-
-/*
-    private void queryProvince(){
-
-        //provinceList.clear(); provinceList操作要在 = DataSupport后，否则会报错
-        provinceList = DataSupport.findAll(Province.class);
-        if (provinceList.size() > 0){
-            queryProvinceFromDB();
-        }
-        else {
-            showProgressDialog();
-            queryFromServer(commonUrl + "/china");
-        }
-        current_level = PROVINCE_LEVEL;
-    }
- */
