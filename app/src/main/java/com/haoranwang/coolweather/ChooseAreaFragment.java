@@ -138,6 +138,7 @@ public class ChooseAreaFragment extends Fragment {
 
     /**
      * 查询选中省内所有的市，优先从数据库查询，如果没有查询到再去服务器上查询，服务器上download下后，再次调用 queryProvince(),从书架库中提数据
+     * 从服务器中获得数据后需在 queryProvinceFromServer 调用 runOnUiThread 更新页面（开启子线程，安卓不允许子线程更新UI，so调用runOnUiThread）
      */
     private void queryProvince(){
 
